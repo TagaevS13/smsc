@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMSC Reporting</title>
+    <style>
+        :root {
+            --bg: #f6f7fb;
+            --text: #1e1f24;
+            --card-bg: #ffffff;
+            --border: #cfd3df;
+            --row-border: #e9ecf3;
+            --th-bg: #f2f4f9;
+            --secondary-btn: #3a3f52;
+            --shadow: 0 2px 10px rgba(0, 0, 0, .05);
+        }
+        body.dark {
+            --bg: #12151f;
+            --text: #e8ebf3;
+            --card-bg: #1a1f2d;
+            --border: #353d54;
+            --row-border: #2a3043;
+            --th-bg: #232a3c;
+            --secondary-btn: #5a6888;
+            --shadow: 0 6px 16px rgba(0, 0, 0, .35);
+        }
+        body { font-family: Arial, sans-serif; margin: 20px; background: var(--bg); color: var(--text); transition: background .2s ease, color .2s ease; }
+        .card { background: var(--card-bg); border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
+        .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        input, select, button { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text); }
+        button { cursor: pointer; border: none; background: #276ef1; color: white; font-weight: 600; }
+        button.secondary { background: var(--secondary-btn); }
+        table { border-collapse: collapse; width: 100%; font-size: 13px; }
+        th, td { border-bottom: 1px solid var(--row-border); padding: 8px; text-align: left; }
+        th { background: var(--th-bg); position: sticky; top: 0; }
+        .ok { color: #1a8f4b; font-weight: 700; }
+        .bad { color: #ca3b3b; font-weight: 700; }
+        .warn { color: #c9a227; font-weight: 700; }
+        .banner-busy { border: 1px solid #c9a227; background: rgba(201, 162, 39, 0.12); }
+        .scroll { max-height: 65vh; overflow: auto; }
+        .pagination { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; font-size: 13px; }
+        .pagination a, .pagination span.pg-ellipsis {
+            display: inline-block; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
+            text-decoration: none; color: var(--text); background: var(--card-bg);
+        }
+        .pagination a.pg-current,
+        .pagination span.pg-current {
+            display: inline-block; padding: 6px 10px; border-radius: 8px;
+            background: #276ef1; color: white; border: 1px solid #276ef1; font-weight: 700;
+        }
+        .pagination a.pg-disabled { opacity: 0.45; pointer-events: none; }
+        .pagination span.pg-ellipsis { border: none; background: transparent; padding: 6px 4px; }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <h1>SMSC CDR Reporting</h1>
+        <div class="row">
+            <button class="secondary" id="theme-toggle" type="button">Toggle theme</button>
+            <form method="post" action="/logout" style="margin:0;">
+                <button class="secondary" type="submit">Logout</button>
+            </form>
+        </div>
+    </div>
+
+    {% if import_busy %}
+    <div class="card banner-busy">
+        Import is already running in another session. Wait until it finishes, then try again.
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div style="margin-bottom: 10px; font-size: 12px; opacity: 0.8;">
+            Active DB: <code>{{ db_file_path }}</code>
+        </div>
+        <form class="row" method="get" action="/">
+            <div class="field">
+                <label>Start datetime</label>
+                <input type="datetime-local" name="start" value="{{ filters.start }}">
+            </div>
+            <div class="field">
+                <label>End datetime</label>
+                <input type="datetime-local" name="end" value="{{ filters.end }}">
+            </div>
+            <div class="field">
+                <label>MSISDN / Number</label>
+                <input type="text" name="number" value="{{ filters.number }}" placeholder="e.g. 992988977346">
+            </div>
+            <div class="field">
+                <label>Status</label>
+                <select name="status">
+                    <option value="" {% if not filters.status %}selected{% endif %}>all</option>
+                    <option value="success" {% if filters.status == 'success' %}selected{% endif %}>success</option>
+                    <option value="failed" {% if filters.status == 'failed' %}selected{% endif %}>failed</option>
+                    <option value="error" {% if filters.status == 'error' %}selected{% endif %}>error</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>Server</label>
+                <select name="source">
+                    <option value="" {% if not filters.source %}selected{% endif %}>all</option>
+                    {% for source in sources %}
+                    <option value="{{ source }}" {% if filters.source == source %}selected{% endif %}>{{ source }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label>In (incoming connection)</label>
+                <select name="incoming">
+                    <option value="" {% if not filters.incoming %}selected{% endif %}>all</option>
+                    {% for incoming in incoming_values %}
+                    <option value="{{ incoming }}" {% if filters.incoming == incoming %}selected{% endif %}>{{ incoming }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit">Apply filters</button>
+            <a href="/export.csv?start={{ filters.start }}&end={{ filters.end }}&number={{ filters.number }}&status={{ filters.status }}&source={{ filters.source }}&incoming={{ filters.incoming }}">
+                <button class="secondary" type="button">Export CSV</button>
+            </a>
+        </form>
+    </div>
+
+    <div class="card">
+        <form method="post" action="/import" style="display:inline-block;">
+            <button type="submit">Import CDR from configured servers</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>Import runs (all sources)</h3>
+        <p style="font-size: 12px; opacity: 0.85; margin-top: 0;">
+            Last <strong>5</strong> runs only (newest first). One row per click on Import.
+            <strong>success</strong> means every configured server finished without error.
+        </p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Started</th><th>Finished</th><th>Overall</th><th>Summary (JSON)</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for b in batches %}
+                <tr>
+                    <td>{{ b.started_at }}</td>
+                    <td>{{ b.finished_at or '—' }}</td>
+                    <td class="{% if b.status == 'success' %}ok{% elif b.status == 'partial' %}warn{% else %}bad{% endif %}">{{ b.status }}</td>
+                    <td style="font-size: 11px; max-width: 520px; word-break: break-all;"><code>{{ b.summary }}</code></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h3>Import jobs (per server)</h3>
+        <p style="font-size: 12px; opacity: 0.85; margin-top: 0;">Last <strong>5</strong> jobs only (newest first).</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Batch</th><th>Started</th><th>Source</th><th>Status</th><th>Inserted</th><th>Skipped</th><th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for job in jobs %}
+                <tr>
+                    <td>{{ job.batch_id or '—' }}</td>
+                    <td>{{ job.started_at }}</td>
+                    <td>{{ job.source }}</td>
+                    <td>{{ job.status }}</td>
+                    <td>{{ job.inserted_rows }}</td>
+                    <td>{{ job.skipped_rows }}</td>
+                    <td>{{ job.details }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card scroll">
+        <h3>CDR rows</h3>
+        <p style="font-size: 12px; opacity: 0.9; margin-top: 0;">
+            {% if pagination.total %}
+            Showing <strong>{{ pagination.start_idx }}–{{ pagination.end_idx }}</strong> of <strong>{{ pagination.total }}</strong>
+            ({{ pagination.per_page }} per page)
+            {% if pagination.total_pages > 1 %}· page {{ pagination.page }} of {{ pagination.total_pages }}{% endif %}
+            {% else %}
+            No records match the current filters.
+            {% endif %}
+        </p>
+        <table>
+            <thead>
+            <tr>
+                <th>Date</th><th>Time</th><th>CDR ID</th><th>Server</th><th>In</th><th>Out</th><th>A</th><th>A translated</th><th>B</th><th>B translated</th><th>Status</th><th>File</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for r in records %}
+            <tr>
+                <td>{{ r.event_time.strftime('%Y-%m-%d') if r.event_time else '' }}</td>
+                <td>{{ r.event_time.strftime('%H:%M:%S.%f') if r.event_time else '' }}</td>
+                <td>{{ r.cdr_id }}</td>
+                <td>{{ r.source_server }}</td>
+                <td>{{ r.incoming_connection }}</td>
+                <td>{{ r.outgoing_route }}</td>
+                <td>{{ r.a_msisdn }}</td>
+                <td>{{ r.a_msisdn_translated }}</td>
+                <td>{{ r.b_msisdn }}</td>
+                <td>{{ r.b_msisdn_translated }}</td>
+                <td class="{% if r.status == 'success' %}ok{% else %}bad{% endif %}">{{ r.status }}</td>
+                <td>{{ r.source_file }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% if pagination.total_pages > 1 %}
+        <nav class="pagination" aria-label="CDR pages">
+            {% if pagination.page > 1 %}
+            <a href="{{ url_for('index', start=filters.start, end=filters.end, number=filters.number, status=filters.status, source=filters.source, incoming=filters.incoming, page=pagination.page - 1) }}">« Prev</a>
+            {% else %}
+            <a class="pg-disabled" href="#" onclick="return false;">« Prev</a>
+            {% endif %}
+            {% for item in pagination.nav_items %}
+                {% if item is none %}
+                <span class="pg-ellipsis">…</span>
+                {% elif item == pagination.page %}
+                <span class="pg-current">{{ item }}</span>
+                {% else %}
+                <a href="{{ url_for('index', start=filters.start, end=filters.end, number=filters.number, status=filters.status, source=filters.source, incoming=filters.incoming, page=item) }}">{{ item }}</a>
+                {% endif %}
+            {% endfor %}
+            {% if pagination.page < pagination.total_pages %}
+            <a href="{{ url_for('index', start=filters.start, end=filters.end, number=filters.number, status=filters.status, source=filters.source, incoming=filters.incoming, page=pagination.page + 1) }}">Next »</a>
+            {% else %}
+            <a class="pg-disabled" href="#" onclick="return false;">Next »</a>
+            {% endif %}
+        </nav>
+        {% endif %}
+    </div>
+
+    <script>
+        (function () {
+            const storageKey = "smsc-reporting-theme";
+            const body = document.body;
+            const toggle = document.getElementById("theme-toggle");
+
+            const storedTheme = localStorage.getItem(storageKey);
+            if (storedTheme === "dark") {
+                body.classList.add("dark");
+            }
+
+            toggle.addEventListener("click", function () {
+                body.classList.toggle("dark");
+                localStorage.setItem(storageKey, body.classList.contains("dark") ? "dark" : "light");
+            });
+        })();
+    </script>
+</body>
+</html>

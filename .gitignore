@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+cdr_reporting.db
+*.db
+
+logs/
+*.log
+
+.pytest_cache/
+.mypy_cache/
+.idea/
+.vscode/

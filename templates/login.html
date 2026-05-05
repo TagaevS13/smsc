@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMSC Reporting Login</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            font-family: Arial, sans-serif;
+            background: #12151f;
+            color: #e8ebf3;
+        }
+        .card {
+            width: min(360px, 90vw);
+            background: #1a1f2d;
+            border-radius: 12px;
+            padding: 22px;
+            box-shadow: 0 8px 20px rgba(0,0,0,.35);
+        }
+        h2 { margin-top: 0; margin-bottom: 14px; }
+        .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+        input {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #353d54;
+            background: #111524;
+            color: #e8ebf3;
+        }
+        button {
+            width: 100%;
+            margin-top: 6px;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            background: #276ef1;
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .error {
+            color: #ff8e8e;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <form class="card" method="post" action="">
+        <h2>SMSC Reporting</h2>
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        <div class="field">
+            <label>Username</label>
+            <input type="text" name="username" required>
+        </div>
+        <div class="field">
+            <label>Password</label>
+            <input type="password" name="password" required>
+        </div>
+        <button type="submit">Login</button>
+    </form>
+</body>
+</html>
