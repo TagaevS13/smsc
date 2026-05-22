@@ -1,0 +1,4 @@
+# Incremental CDR import every 10 minutes (install to /etc/cron.d/smsc-import)
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+*/10 * * * * sorbon cd /opt/smsc && set -a && [ -f .env ] && . ./.env; set +a && .venv/bin/python import_once.py >> /opt/smsc/logs/cron-import.log 2>&1

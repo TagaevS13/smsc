@@ -3,3 +3,4 @@ SQLAlchemy>=2.0.0
 python-dateutil>=2.9.0
 paramiko>=3.4.0
 PyYAML>=6.0.0
+gunicorn>=22.0.0

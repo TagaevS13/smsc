@@ -1,0 +1,16 @@
+[Unit]
+Description=SMSC CDR Reporting (Gunicorn, user service)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/smsc
+EnvironmentFile=-/opt/smsc/.env
+ExecStart=/opt/smsc/.venv/bin/gunicorn -w 1 -b 0.0.0.0:8080 --timeout 120 --chdir /opt/smsc app:app
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

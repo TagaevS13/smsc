@@ -4,7 +4,7 @@ sources:
     host: "129.13.0.125"
     port: 22
     username: "parser"
-    password: "131095Ss!"
+    password: "CHANGE_ME"
     path: "/sftp/cdr/SMS"
 
   - name: smsc2
@@ -12,5 +12,5 @@ sources:
     host: "129.13.0.123"
     port: 22
     username: "parser"
-    password: "131095Ss!"
+    password: "CHANGE_ME"
     path: "/sftp/cdr/SMS"

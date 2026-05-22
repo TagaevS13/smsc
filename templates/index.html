@@ -60,15 +60,33 @@
         <h1>SMSC CDR Reporting</h1>
         <div class="row">
             <button class="secondary" id="theme-toggle" type="button">Toggle theme</button>
-            <form method="post" action="/logout" style="margin:0;">
+            <form method="post" action="{{ url_for('smsc.logout') }}" style="margin:0;">
                 <button class="secondary" type="submit">Logout</button>
             </form>
         </div>
     </div>
 
-    {% if import_busy %}
+    {% if is_admin and import_busy %}
     <div class="card banner-busy">
         Import is already running in another session. Wait until it finishes, then try again.
+    </div>
+    {% endif %}
+
+    {% if import_started or import_progress.running %}
+    <div class="card banner-busy" id="import-progress-card">
+        <strong>Import in progress</strong>
+        <p style="margin: 8px 0 0; font-size: 13px;" id="import-progress-text">
+            {% if import_progress.running %}
+            Source: <code>{{ import_progress.source or '…' }}</code> ·
+            Files: <strong id="import-progress-count">{{ import_progress.processed or 0 }}</strong> /
+            <strong id="import-progress-total">{{ import_progress.selected or '?' }}</strong>
+            {% if import_progress.current_file %}
+            · Current: <code style="font-size: 11px;">{{ import_progress.current_file }}</code>
+            {% endif %}
+            {% else %}
+            Import started. Refreshing progress…
+            {% endif %}
+        </p>
     </div>
     {% endif %}
 
@@ -76,7 +94,7 @@
         <div style="margin-bottom: 10px; font-size: 12px; opacity: 0.8;">
             Active DB: <code>{{ db_file_path }}</code>
         </div>
-        <form class="row" method="get" action="/">
+        <form class="row" method="get" action="{{ url_for('smsc.index') }}">
             <div class="field">
                 <label>Start datetime</label>
                 <input type="datetime-local" name="start" value="{{ filters.start }}">
@@ -117,18 +135,38 @@
                 </select>
             </div>
             <button type="submit">Apply filters</button>
-            <a href="/export.csv?start={{ filters.start }}&end={{ filters.end }}&number={{ filters.number }}&status={{ filters.status }}&source={{ filters.source }}&incoming={{ filters.incoming }}">
+            <a href="{{ url_for('smsc.export_csv', start=filters.start, end=filters.end, number=filters.number, status=filters.status, source=filters.source, incoming=filters.incoming) }}">
                 <button class="secondary" type="button">Export CSV</button>
             </a>
         </form>
     </div>
 
+    {% if is_admin %}
     <div class="card">
-        <form method="post" action="/import" style="display:inline-block;">
+        <h3 style="margin-top: 0;">Import CDR</h3>
+        <form method="post" action="{{ url_for('smsc.import_all') }}" class="row">
             <button type="submit">Import CDR from configured servers</button>
         </form>
+        <form method="post" action="{{ url_for('smsc.import_all') }}" class="row" style="margin-top: 12px;">
+            <div class="field">
+                <label>Backfill from (date)</label>
+                <input type="date" name="backfill_from" placeholder="2026-05-05">
+            </div>
+            <div class="field">
+                <label>Backfill to (date)</label>
+                <input type="date" name="backfill_to" placeholder="2026-05-07">
+            </div>
+            <button type="submit" class="secondary">Backfill date range</button>
+        </form>
+        <p style="font-size: 12px; opacity: 0.85; margin-bottom: 0;">
+            Incremental import runs in the background (max {{ max_files_per_run }} files per server per run).
+            Backfill imports only files in the date range that changed on SFTP.
+            Automatic import via cron every 10 minutes.
+        </p>
     </div>
+    {% endif %}
 
+    {% if is_admin %}
     <div class="card">
         <h3>Import runs (all sources)</h3>
         <p style="font-size: 12px; opacity: 0.85; margin-top: 0;">
@@ -138,7 +176,7 @@
         <table>
             <thead>
                 <tr>
-                    <th>Started</th><th>Finished</th><th>Overall</th><th>Summary (JSON)</th>
+                    <th>Started</th><th>Finished</th><th>Overall</th><th>Summary</th>
                 </tr>
             </thead>
             <tbody>
@@ -147,7 +185,7 @@
                     <td>{{ b.started_at }}</td>
                     <td>{{ b.finished_at or '—' }}</td>
                     <td class="{% if b.status == 'success' %}ok{% elif b.status == 'partial' %}warn{% else %}bad{% endif %}">{{ b.status }}</td>
-                    <td style="font-size: 11px; max-width: 520px; word-break: break-all;"><code>{{ b.summary }}</code></td>
+                    <td style="font-size: 12px; max-width: 520px; white-space: pre-wrap;">{{ b.summary }}</td>
                 </tr>
             {% endfor %}
             </tbody>
@@ -178,6 +216,7 @@
             </tbody>
         </table>
     </div>
+    {% endif %}
 
     <div class="card scroll">
         <h3>CDR rows</h3>
@@ -218,7 +257,7 @@
         {% if pagination.total_pages > 1 %}
         <nav class="pagination" aria-label="CDR pages">
             {% if pagination.page > 1 %}
-            <a href="{{ url_for('index', start=filters.start, end=filters.end, number=filters.number, status=filters.status, source=filters.source, incoming=filters.incoming, page=pagination.page - 1) }}">« Prev</a>
+            <a href="{{ url_for('smsc.index', start=filters.start, end=filters.end, number=filters.number, status=filters.status, source=filters.source, incoming=filters.incoming, page=pagination.page - 1) }}">« Prev</a>
             {% else %}
             <a class="pg-disabled" href="#" onclick="return false;">« Prev</a>
             {% endif %}
@@ -228,11 +267,11 @@
                 {% elif item == pagination.page %}
                 <span class="pg-current">{{ item }}</span>
                 {% else %}
-                <a href="{{ url_for('index', start=filters.start, end=filters.end, number=filters.number, status=filters.status, source=filters.source, incoming=filters.incoming, page=item) }}">{{ item }}</a>
+                <a href="{{ url_for('smsc.index', start=filters.start, end=filters.end, number=filters.number, status=filters.status, source=filters.source, incoming=filters.incoming, page=item) }}">{{ item }}</a>
                 {% endif %}
             {% endfor %}
             {% if pagination.page < pagination.total_pages %}
-            <a href="{{ url_for('index', start=filters.start, end=filters.end, number=filters.number, status=filters.status, source=filters.source, incoming=filters.incoming, page=pagination.page + 1) }}">Next »</a>
+            <a href="{{ url_for('smsc.index', start=filters.start, end=filters.end, number=filters.number, status=filters.status, source=filters.source, incoming=filters.incoming, page=pagination.page + 1) }}">Next »</a>
             {% else %}
             <a class="pg-disabled" href="#" onclick="return false;">Next »</a>
             {% endif %}
@@ -242,6 +281,38 @@
 
     <script>
         (function () {
+            const pollImport = {{ 'true' if (import_started or import_progress.running) else 'false' }};
+            if (pollImport) {
+                const poll = function () {
+                    fetch("{{ url_for('smsc.import_status') }}", { credentials: "same-origin" })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            const card = document.getElementById("import-progress-card");
+                            if (!card) return;
+                            const countEl = document.getElementById("import-progress-count");
+                            const totalEl = document.getElementById("import-progress-total");
+                            const textEl = document.getElementById("import-progress-text");
+                            if (countEl) countEl.textContent = data.processed || 0;
+                            if (totalEl) totalEl.textContent = data.selected || "?";
+                            if (textEl && data.running) {
+                                let html = "Source: <code>" + (data.source || "…") + "</code> · Files: <strong>" +
+                                    (data.processed || 0) + "</strong> / <strong>" + (data.selected || "?") + "</strong>";
+                                if (data.current_file) {
+                                    html += " · Current: <code style=\"font-size:11px\">" + data.current_file + "</code>";
+                                }
+                                textEl.innerHTML = html;
+                            }
+                            if (!data.running) {
+                                window.location.reload();
+                                return;
+                            }
+                            setTimeout(poll, 4000);
+                        })
+                        .catch(function () { setTimeout(poll, 8000); });
+                };
+                setTimeout(poll, 2000);
+            }
+
             const storageKey = "smsc-reporting-theme";
             const body = document.body;
             const toggle = document.getElementById("theme-toggle");

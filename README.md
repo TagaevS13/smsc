@@ -2,6 +2,8 @@
 
 Веб-интерфейс для загрузки CDR с двух серверов SMSC в собственную БД и отчетности с фильтрами.
 
+**Полная документация:** [docs/MANUAL.md](docs/MANUAL.md) — архитектура, каждый файл, БД, импорт, cron, роли, эксплуатация.
+
 ## Что умеет
 
 - Импорт CDR из двух источников (`smsc1`, `smsc2`);
@@ -52,7 +54,7 @@ sources:
     host: "129.13.0.125"
     port: 22
     username: "parser"
-    password: "131095Ss!"
+    password: "CHANGE_ME"
     path: "/sftp/cdr/SMS"
 
   - name: smsc2
@@ -60,7 +62,7 @@ sources:
     host: "129.13.0.123"
     port: 22
     username: "parser"
-    password: "131095Ss!"
+    password: "CHANGE_ME"
     path: "/sftp/cdr/SMS"
 ```
 
@@ -91,4 +93,31 @@ sources:
 
 - Дедупликация выполняется по `(cdr_id, source_server)`.
 - Некорректные строки пропускаются и учитываются как skipped.
+
+## Автоимпорт (cron)
+
+На сервере каждые 10 минут:
+
+```bash
+*/10 * * * * cd /opt/smsc && .venv/bin/python import_once.py >> /opt/smsc/logs/cron-import.log 2>&1
+```
+
+Ручной/backfill импорт из UI запускает тот же `import_once.py` в отдельном процессе (не блокирует Gunicorn).
+
+Переменные: `SMSC_IMPORT_STALE_MINUTES` (600 = 10 ч), `SMSC_IMPORT_PROGRESS_STALE_MINUTES` (30), `SMSC_CDR_RETENTION_DAYS` (90).
+
+## Production (сервер project)
+
+URL: `http://<host>:8080/smsc/` — Gunicorn + user systemd, не `python app.py`:
+
+```bash
+# Автоматическая установка (с Windows):
+powershell -File ~\deploy\upload-and-install.ps1
+
+# Или на сервере вручную:
+sudo SMSC_SRC=/tmp/smsc-src CC_SRC=/tmp/callcenter-src /tmp/project-server/setup-all.sh
+```
+
+Конфиг: скопируйте `config.yaml.example` → `config.yaml`, задайте SFTP-пароли.
+Секреты сессии — в `/opt/smsc/.env` (`SMSC_REPORTING_SECRET`, `SMSC_ADMIN_PASSWORD`).
 

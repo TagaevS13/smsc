@@ -9,13 +9,15 @@ from werkzeug.security import generate_password_hash
 
 from db import User, create_session_factory
 
+PASSWORD_HASH_METHOD = "pbkdf2:sha256"
+
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_URL = f"sqlite:///{(BASE_DIR / 'cdr_reporting.db').as_posix()}"
 SessionFactory = create_session_factory(DB_URL)
 
 
-def cmd_add(username: str, password: str) -> None:
+def cmd_add(username: str, password: str, is_admin: bool = False) -> None:
     with SessionFactory() as session:
         existing = session.scalar(select(User).where(User.username == username))
         if existing:
@@ -23,12 +25,14 @@ def cmd_add(username: str, password: str) -> None:
         session.add(
             User(
                 username=username,
-                password_hash=generate_password_hash(password),
+                password_hash=generate_password_hash(password, method=PASSWORD_HASH_METHOD),
                 is_active=True,
+                is_admin=is_admin,
             )
         )
         session.commit()
-    print(f"User '{username}' created")
+    role = "admin" if is_admin else "user"
+    print(f"User '{username}' created ({role})")
 
 
 def cmd_set_password(username: str, password: str) -> None:
@@ -36,7 +40,7 @@ def cmd_set_password(username: str, password: str) -> None:
         user = session.scalar(select(User).where(User.username == username))
         if not user:
             raise SystemExit(f"User '{username}' not found")
-        user.password_hash = generate_password_hash(password)
+        user.password_hash = generate_password_hash(password, method=PASSWORD_HASH_METHOD)
         session.commit()
     print(f"Password updated for '{username}'")
 
@@ -48,7 +52,9 @@ def cmd_list() -> None:
         print("No users")
         return
     for row in rows:
-        print(f"{row.username}\tactive={row.is_active}\tcreated_at={row.created_at}")
+        print(
+            f"{row.username}\tactive={row.is_active}\tadmin={row.is_admin}\tcreated_at={row.created_at}"
+        )
 
 
 def cmd_set_active(username: str, is_active: bool) -> None:
@@ -69,6 +75,7 @@ def main() -> None:
     add_p = sub.add_parser("add", help="Add new user")
     add_p.add_argument("username")
     add_p.add_argument("--password")
+    add_p.add_argument("--admin", action="store_true", help="Grant admin (import UI)")
 
     set_pass_p = sub.add_parser("set-password", help="Set user password")
     set_pass_p.add_argument("username")
@@ -86,7 +93,7 @@ def main() -> None:
 
     if args.command == "add":
         password = args.password or getpass("Password: ")
-        cmd_add(args.username, password)
+        cmd_add(args.username, password, is_admin=args.admin)
     elif args.command == "set-password":
         password = args.password or getpass("New password: ")
         cmd_set_password(args.username, password)

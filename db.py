@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
 
 from sqlalchemy import (
@@ -51,6 +52,7 @@ class ImportBatch(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="running", index=True)
     summary: Mapped[str] = mapped_column(Text, default="")
+    progress_json: Mapped[str] = mapped_column(Text, default="")
 
 
 class ImportJob(Base):
@@ -66,7 +68,7 @@ class ImportJob(Base):
     status: Mapped[str] = mapped_column(String(32), default="running")
     inserted_rows: Mapped[int] = mapped_column(Integer, default=0)
     skipped_rows: Mapped[int] = mapped_column(Integer, default=0)
-    details: Mapped[str] = mapped_column(String(2048), default="")
+    details: Mapped[str] = mapped_column(Text, default="")
     is_success: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
@@ -77,6 +79,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -93,6 +96,35 @@ class AuditLog(Base):
     remote_addr: Mapped[str] = mapped_column(String(64), default="")
 
 
+class ImportCursor(Base):
+    """Per-source import position for incremental catch-up."""
+
+    __tablename__ = "import_cursors"
+
+    source_server: Mapped[str] = mapped_column(String(64), primary_key=True)
+    last_file_dt: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    bootstrap_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bootstrap_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bootstrap_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SourceFileState(Base):
+    """Tracks already-processed source files and their latest metadata."""
+
+    __tablename__ = "source_file_states"
+    __table_args__ = (
+        UniqueConstraint("source_server", "file_name", name="uq_source_file_state"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_server: Mapped[str] = mapped_column(String(64), index=True)
+    file_name: Mapped[str] = mapped_column(String(255), index=True)
+    last_mtime: Mapped[int] = mapped_column(Integer, default=0)
+    last_size: Mapped[int] = mapped_column(Integer, default=0)
+    last_imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 def _ensure_sqlite_schema(engine) -> None:
     if engine.dialect.name != "sqlite":
         return
@@ -106,6 +138,26 @@ def _ensure_sqlite_schema(engine) -> None:
             conn.execute(
                 text("ALTER TABLE import_jobs ADD COLUMN batch_id INTEGER REFERENCES import_batches(id)")
             )
+    insp = inspect(engine)
+    if "import_cursors" not in insp.get_table_names():
+        ImportCursor.__table__.create(engine, checkfirst=True)
+    batch_cols = {c["name"] for c in insp.get_columns("import_batches")}
+    if "progress_json" not in batch_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE import_batches ADD COLUMN progress_json TEXT DEFAULT ''"))
+    if "users" in insp.get_table_names():
+        user_cols = {c["name"] for c in insp.get_columns("users")}
+        if "is_admin" not in user_cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0")
+                )
+            admin_name = os.getenv("SMSC_ADMIN_USER", "admin")
+            with engine.begin() as conn:
+                conn.execute(
+                    text("UPDATE users SET is_admin = 1 WHERE username = :u"),
+                    {"u": admin_name},
+                )
 
 
 def create_session_factory(db_url: str) -> sessionmaker[Session]:
@@ -115,4 +167,8 @@ def create_session_factory(db_url: str) -> sessionmaker[Session]:
         engine = create_engine(db_url, future=True)
     Base.metadata.create_all(engine)
     _ensure_sqlite_schema(engine)
+    if engine.dialect.name == "sqlite":
+        with engine.connect() as conn:
+            conn.execute(text("PRAGMA journal_mode=WAL"))
+            conn.commit()
     return sessionmaker(bind=engine, future=True)
